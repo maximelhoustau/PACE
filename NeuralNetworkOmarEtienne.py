@@ -1,6 +1,6 @@
 import mxnet as mx
 from mxnet import nd, autograd       
-
+import random
 
              
              
@@ -36,12 +36,12 @@ class NeuralNetwork:
     nbIter = 50
     batchSize = 100
     
-    def SE(yhat,y):                      ##norme 2
+    def SE(yhat,y):
         return nd.sum((yhat - y) ** 2)
     SE = staticmethod(SE)
     
     ##pourrait etre une methode d'objet
-    def adam(params, vs, sqrs, lr, batch_size, t):                   ##descente de gradient
+    def adam(params, vs, sqrs, lr, batch_size, t):
         beta1 = 0.9
         beta2 = 0.999
         eps_stable = 1e-8
@@ -75,6 +75,14 @@ class NeuralNetwork:
             self.params.append(nd.random_normal(shape=(self.sizes[i],self.sizes[i+1]),ctx=self.ctx))
             self.params.append(nd.random.normal(shape = (self.sizes[i+1],),ctx=self.ctx))
         
+        self.sizeG = 2**code.k
+        self.z = [[0 for j in range(code.k)] for i in range(self.sizeG)]
+        for i in range(self.sizeG):
+            s = ("{:0"+str(code.k)+"b}").format(i)
+            for j in range(len(s)):
+                self.z[i][j] = s[j]
+        self.z = nd.array(self.z,ctx = self.ctx)
+        self.x = nd.dot(self.z,self.code.G)%2
         
         
         self.t = 1
@@ -86,7 +94,7 @@ class NeuralNetwork:
             self.vs.append(param.zeros_like())
             self.sqrs.append(param.zeros_like())
         
-        self.lr = 0.01
+        self.lr = 1
     
     
     
@@ -130,14 +138,47 @@ class NeuralNetwork:
             normCumuLoss = cumuLoss/(self.batchSize*self.nbIter*self.code.k)
             print("Epochs %d: Pe = %lf , loss = %lf" % (i,Pe,normCumuLoss))
         
+    def train2(self,epochs):
+        for i in range(epochs):
+            efficiency = 0
+            cumuLoss = 0
+            for j in range(self.nbIter):
+                noiseBSC = nd.random.uniform(0.01,0.99,(self.sizeG,self.code.n),ctx=self.ctx)
+                noiseBSC = nd.floor(noiseBSC/nd.max(noiseBSC,axis=(1,)).reshape((self.sizeG,1)))
+                actif = nd.array([[random.uniform(0,1)>0.125]*self.code.n for k in range(self.sizeG)], ctx = self.ctx)
+                noiseBSC = noiseBSC * actif
+                
+                y = (self.x + noiseBSC)%2
+
+                with autograd.record():
+                    zHat = self.net(y)
+                    loss = self.SE(zHat,self.z)
+                loss.backward()
+
+                self.adam(self.params,self.vs,self.sqrs, self.lr, self.sizeG, self.t)
+                self.t+=1
+        
+                cumuLoss += loss.asscalar()
+                zHat = nd.round(zHat)
+                efficiency += nd.sum(nd.equal(zHat,self.z)).asscalar()
+
+                
+            Pc = efficiency/(self.sizeG*self.nbIter*self.code.k)
+            Pe = 1 - Pc
+            normCumuLoss = cumuLoss/(self.sizeG*self.nbIter*self.code.k)
+            print("Epochs %d: Pe = %lf , loss = %lf" % (i,Pe,normCumuLoss))
     
     ##overwrite the file ./file
     def save(self,file):
         with open(file,"w") as f:
             f.write(self.toString())
             
-    def open(file):
-        file.open
+    def open(cls,file):
+        s = ""
+        with open(file,"r") as f:
+            s = f.read()
+        return cls.stringToNet(s)
+    open = classmethod(open)
     
     def toString(self):
         s = "/Dimension :\n\n"
@@ -162,6 +203,39 @@ class NeuralNetwork:
                     s+= str(value.asnumpy()[0]) + " "
                 s+="\n"
         return s
+    
+    def stringToNet(s):
+        tab = s.split("\n")
+        tab2 = []
+        for chain in tab:
+            if "/" not in chain and chain != "":
+                tab2.append(chain.strip(" "))
+        
+        insideLayersNumber = int(tab2.pop(0))
+        sizes = []
+        
+        for chain in tab2.pop(0).split(" "):
+            sizes.append(int(chain))
+        k = sizes[-1]
+        n = sizes[0]
+        G = nd.array([[0 for j in range(n)] for i in range(k)],ctx=mx.cpu(0))
+            
+        for i in range(k):
+            ligne = tab2.pop(0).split(" ")
+            for j in range(n):
+                G[i,j] = float(ligne[j])
+        
+        code = Code(k,n,G)
+        net = NeuralNetwork(code,insideLayersNumber,sizes[1:-1])
+        
+        for param in net.params:
+            for ligne in param:
+                ligne_fichier = tab2.pop(0).split(" ")
+                for i in range(len(ligne_fichier)):
+                    ligne[i] = float(ligne_fichier[i])
+        
+        return net
+    stringToNet = staticmethod(stringToNet)
 
 Gbis= nd.array([[1, 0, 0, 0,1,0,1,1],
                 [0, 1, 0, 0,1,1,0,1],
@@ -169,4 +243,4 @@ Gbis= nd.array([[1, 0, 0, 0,1,0,1,1],
                 [0, 0, 0, 1,0,1,1,1]],ctx=mx.cpu(0))
 
 code = Code(4,8,Gbis)
-net = NeuralNetwork(code,2,[7,7])
+net = NeuralNetwork(code,3,[7,7,7])
