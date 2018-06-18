@@ -146,7 +146,7 @@ class NeuralNetwork:
             for j in range(self.nbIter):
                 noiseBSC = nd.random.uniform(0.01,0.99,(self.sizeG,self.code.n),ctx=self.ctx)
                 noiseBSC = nd.floor(noiseBSC/nd.max(noiseBSC,axis=(1,)).reshape((self.sizeG,1)))
-                actif = nd.array([[random.uniform(0,1)>0.5]*self.code.n for k in range(self.sizeG)], ctx = self.ctx)
+                actif = nd.array([[random.uniform(0,1)>0.125]*self.code.n for k in range(self.sizeG)], ctx = self.ctx)
                 noiseBSC = noiseBSC * actif
                 
                 y = (self.x + noiseBSC)%2
