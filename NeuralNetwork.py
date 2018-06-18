@@ -199,6 +199,7 @@ class NeuralNetwork:
                 s+="\n"
         return s
 
+    
     def open(cls,file):
         s = ""
         with open(file,"r") as f:
@@ -237,6 +238,7 @@ class NeuralNetwork:
                     ligne[i] = float(ligne_fichier[i])
         
         return net
+    stringToNet = staticmethod(stringToNet)
                 
 if __name__ == "__main__":
     G= nd.array([[1, 0, 0, 0,1,0,1],
