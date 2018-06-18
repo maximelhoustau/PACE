@@ -160,6 +160,44 @@ class NeuralNetwork:
                 s+="\n"
         return s
 
+    def open(cls,file):
+        s = ""
+        with open(file,"r") as f:
+            s = f.read()
+        return cls.stringToNet(s)
+    open = classmethod(open)
+    
+    def stringToNet(s):
+        tab = s.split("\n")
+        tab2 = []
+        for chain in tab:
+            if "/" not in chain and chain != "":
+                tab2.append(chain.strip(" "))
+        
+        insideLayersNumber = int(tab2.pop(0))
+        sizes = []
+        
+        for chain in tab2.pop(0).split(" "):
+            sizes.append(int(chain))
+        k = sizes[-1]
+        n = sizes[0]
+        G = nd.array([[0 for i in range(n)] for j in range(k)],ctx=mx.cpu(0))
+            
+        for i in range(k):
+            ligne = tab2.pop(0).split(" ")
+            for j in range(n):
+                G[i,j] = float(ligne[j])
+        
+        code = Code(k,n,G)
+        net = NeuralNetwork(code,insideLayersNumber,sizes[1:-1])
+        
+        for param in net.params:
+            for ligne in param:
+                ligne_fichier = tab2.pop(0).split(" ")
+                for i in range(len(ligne_fichier)):
+                    ligne[i] = float(ligne_fichier[i])
+        
+        return net
                 
 if __name__ == "__main__":
     G= nd.array([[1, 0, 0, 0,1,0,1],
@@ -168,4 +206,3 @@ if __name__ == "__main__":
                 [0, 0, 0, 1,0,1,1]],ctx=mx.cpu(0))
     code = Code(4,7,G)
     net = NeuralNetwork(code,2,[7,7])
-                
