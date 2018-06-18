@@ -40,7 +40,7 @@ class NeuralNetwork:
         return nd.sum((yhat - y) ** 2)
     SE = staticmethod(SE)
     
-    ##pourrait être une methode d'objet
+    ##pourrait etre une methode d'objet
     def adam(params, vs, sqrs, lr, batch_size, t):                   ##descente de gradient
         beta1 = 0.9
         beta2 = 0.999
@@ -135,6 +135,9 @@ class NeuralNetwork:
     def save(self,file):
         with open(file,"w") as f:
             f.write(self.toString())
+            
+    def open(file):
+        file.open
     
     def toString(self):
         s = "/Dimension :\n\n"
