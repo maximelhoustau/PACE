@@ -1,5 +1,6 @@
 import mxnet as mx
-from mxnet import nd, autograd       
+from mxnet import nd, autograd
+import random     
 
 
              
@@ -75,6 +76,14 @@ class NeuralNetwork:
             self.params.append(nd.random_normal(shape=(self.sizes[i],self.sizes[i+1]),ctx=self.ctx))
             self.params.append(nd.random.normal(shape = (self.sizes[i+1],),ctx=self.ctx))
         
+        self.sizeG = 2**code.k
+        self.z = [[0 for j in range(code.k)] for i in range(self.sizeG)]
+        for i in range(self.sizeG):
+            s = ("{:0"+str(code.k)+"b}").format(i)
+            for j in range(len(s)):
+                self.z[i][j] = s[j]
+        self.z = nd.array(self.z,ctx = self.ctx)
+        self.x = nd.dot(self.z,self.code.G)%2
         
         
         self.t = 1
@@ -129,6 +138,36 @@ class NeuralNetwork:
             Pe = 1 - Pc
             normCumuLoss = cumuLoss/(self.batchSize*self.nbIter*self.code.k)
             print("Epochs %d: Pe = %lf , loss = %lf" % (i,Pe,normCumuLoss))
+    
+    def train2(self,epochs):
+        for i in range(epochs):
+            efficiency = 0
+            cumuLoss = 0
+            for j in range(self.nbIter):
+                noiseBSC = nd.random.uniform(0.01,0.99,(self.sizeG,self.code.n),ctx=self.ctx)
+                noiseBSC = nd.floor(noiseBSC/nd.max(noiseBSC,axis=(1,)).reshape((self.sizeG,1)))
+                actif = nd.array([[random.uniform(0,1)>0.5]*self.code.n for k in range(self.sizeG)], ctx = self.ctx)
+                noiseBSC = noiseBSC * actif
+                
+                y = (self.x + noiseBSC)%2
+
+                with autograd.record():
+                    zHat = self.net(y)
+                    loss = self.SE(zHat,self.z)
+                loss.backward()
+
+                self.adam(self.params,self.vs,self.sqrs, self.lr, self.sizeG, self.t)
+                self.t+=1
+        
+                cumuLoss += loss.asscalar()
+                zHat = nd.round(zHat)
+                efficiency += nd.sum(nd.equal(zHat,self.z)).asscalar()
+
+                
+            Pc = efficiency/(self.sizeG*self.nbIter*self.code.k)
+            Pe = 1 - Pc
+            normCumuLoss = cumuLoss/(self.sizeG*self.nbIter*self.code.k)
+            print("Epochs %d: Pe = %lf , loss = %lf" % (i,Pe,normCumuLoss))
         
     
     ##overwrite the file ./file
@@ -181,7 +220,7 @@ class NeuralNetwork:
             sizes.append(int(chain))
         k = sizes[-1]
         n = sizes[0]
-        G = nd.array([[0 for i in range(n)] for j in range(k)],ctx=mx.cpu(0))
+        G = nd.array([[0 for j in range(n)] for i in range(k)],ctx=mx.cpu(0))
             
         for i in range(k):
             ligne = tab2.pop(0).split(" ")
