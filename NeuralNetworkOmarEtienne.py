@@ -94,7 +94,7 @@ class NeuralNetwork:
             self.vs.append(param.zeros_like())
             self.sqrs.append(param.zeros_like())
         
-        self.lr = 1
+        self.lr = 0.01
     
     
     
@@ -117,7 +117,10 @@ class NeuralNetwork:
 
                 noiseBSC = nd.random.uniform(0.01,0.99,(self.batchSize,self.code.n),ctx=self.ctx)
                 noiseBSC = nd.floor(noiseBSC/nd.max(noiseBSC,axis=(1,)).reshape((self.batchSize,1)))
-
+                actif = nd.array([[random.uniform(0,1)>0.125]*self.code.n for k in range(self.batchSize)], ctx = self.ctx)
+                noiseBSC = noiseBSC * actif
+                
+                
                 y = (x + noiseBSC)%2
 
                 with autograd.record():
@@ -241,6 +244,19 @@ Gbis= nd.array([[1, 0, 0, 0,1,0,1,1],
                 [0, 1, 0, 0,1,1,0,1],
                 [0, 0, 1, 0,1,1,1,0],
                 [0, 0, 0, 1,0,1,1,1]],ctx=mx.cpu(0))
+    
+G15 = nd.array([[1,0,0,0,0,0,0,0,0,0,0,1,1,0,0],
+                [0,1,0,0,0,0,0,0,0,0,0,0,1,1,0],
+                [0,0,1,0,0,0,0,0,0,0,0,0,0,1,1],
+                [0,0,0,1,0,0,0,0,0,0,0,1,1,0,1],
+                [0,0,0,0,1,0,0,0,0,0,0,1,0,1,0],
+                [0,0,0,0,0,1,0,0,0,0,0,0,1,0,1],
+                [0,0,0,0,0,0,1,0,0,0,0,1,1,1,0],
+                [0,0,0,0,0,0,0,1,0,0,0,0,1,1,1],
+                [0,0,0,0,0,0,0,0,1,0,0,1,1,1,1],
+                [0,0,0,0,0,0,0,0,0,1,0,1,0,1,1],
+                [0,0,0,0,0,0,0,0,0,0,1,1,0,0,1]],ctx=mx.cpu(0))
 
 code = Code(4,8,Gbis)
-net = NeuralNetwork(code,3,[7,7,7])
+
+code1 = Code(11,15,G15)
