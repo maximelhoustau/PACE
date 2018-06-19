@@ -84,6 +84,14 @@ class NeuralNetwork:
         self.z = nd.array(self.z,ctx = self.ctx)
         self.x = nd.dot(self.z,self.code.G)%2
         
+        self.words = []
+        
+        for word in self.x.asnumpy():
+            self.words.append(nd.array(word, ctx = self.ctx))
+            for i in range(len(word)):
+                word[i] = (word[i]+1)%2
+                self.words.append(nd.array(word,ctx = self.ctx))
+                word[i] = (word[i]+1)%2
         
         self.t = 1
         self.vs = []
@@ -117,11 +125,8 @@ class NeuralNetwork:
 
                 noiseBSC = nd.random.uniform(0.01,0.99,(self.batchSize,self.code.n),ctx=self.ctx)
                 noiseBSC = nd.floor(noiseBSC/nd.max(noiseBSC,axis=(1,)).reshape((self.batchSize,1)))
-                actif = nd.array([[random.uniform(0,1)>0.125]*self.code.n for k in range(self.batchSize)], ctx = self.ctx)
-                noiseBSC = noiseBSC * actif
-                
-                
-                y = (x + noiseBSC)%2
+
+                y = x #+ noiseBSC)%2
 
                 with autograd.record():
                     zHat = self.net(y)
@@ -140,7 +145,7 @@ class NeuralNetwork:
             Pe = 1 - Pc
             normCumuLoss = cumuLoss/(self.batchSize*self.nbIter*self.code.k)
             print("Epochs %d: Pe = %lf , loss = %lf" % (i,Pe,normCumuLoss))
-        
+    
     def train2(self,epochs):
         for i in range(epochs):
             efficiency = 0
@@ -165,23 +170,63 @@ class NeuralNetwork:
                 zHat = nd.round(zHat)
                 efficiency += nd.sum(nd.equal(zHat,self.z)).asscalar()
 
-                
+               
             Pc = efficiency/(self.sizeG*self.nbIter*self.code.k)
             Pe = 1 - Pc
             normCumuLoss = cumuLoss/(self.sizeG*self.nbIter*self.code.k)
             print("Epochs %d: Pe = %lf , loss = %lf" % (i,Pe,normCumuLoss))
     
+    def train3(self,epochs):
+        batchSize = len(self.words)
+        z = []
+        for elt in self.z.asnumpy():
+            z.extend([list(elt)]*(self.code.n+1))
+        z = nd.array(z,ctx=self.ctx)
+        x = []
+        for elt in self.words:
+            x.append(list(elt.asnumpy()))
+        x = nd.array(x,ctx = self.ctx)
+        
+        for i in range(epochs):
+            efficiency = 0
+            cumuLoss = 0
+            for j in range(self.nbIter):
+                with autograd.record():
+                    zHat = self.net(x)
+                    loss = self.SE(zHat,z)
+                loss.backward()
+                
+                self.adam(self.params,self.vs,self.sqrs, self.lr, batchSize, self.t)
+                self.t+=1
+        
+                cumuLoss += loss.asscalar()
+                zHat = nd.round(zHat)
+                efficiency += nd.sum(nd.equal(zHat,z)).asscalar()
+ 
+            Pc = efficiency/(batchSize*self.nbIter*self.code.k)
+            Pe = 1 - Pc
+            normCumuLoss = cumuLoss/(batchSize*self.nbIter*self.code.k)
+            print("Epochs %d: Pe = %lf , loss = %lf" % (i,Pe,normCumuLoss))
+
+    def computePerformances(self):
+        wrong = []
+        cpt = 0
+        for i in range(len(self.z)):
+            for word in self.words[(self.code.n+1)*i:(self.code.n+1)*(i+1)]:
+                zhat = self.net(word)
+                for diff in nd.round(zhat+self.z[i]):
+                    if diff.asscalar()%2 != 0:
+                        wrong.append((self.z[i],word))
+                        cpt+=1
+                        break
+        
+        return (cpt,len(self.words),wrong)
+                
+    
     ##overwrite the file ./file
     def save(self,file):
         with open(file,"w") as f:
             f.write(self.toString())
-            
-    def open(cls,file):
-        s = ""
-        with open(file,"r") as f:
-            s = f.read()
-        return cls.stringToNet(s)
-    open = classmethod(open)
     
     def toString(self):
         s = "/Dimension :\n\n"
@@ -206,6 +251,14 @@ class NeuralNetwork:
                     s+= str(value.asnumpy()[0]) + " "
                 s+="\n"
         return s
+
+    
+    def open(cls,file):
+        s = ""
+        with open(file,"r") as f:
+            s = f.read()
+        return cls.stringToNet(s)
+    open = classmethod(open)
     
     def stringToNet(s):
         tab = s.split("\n")
