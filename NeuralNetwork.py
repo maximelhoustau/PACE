@@ -85,6 +85,14 @@ class NeuralNetwork:
         self.z = nd.array(self.z,ctx = self.ctx)
         self.x = nd.dot(self.z,self.code.G)%2
         
+        self.words = []
+        
+        for word in self.x.asnumpy():
+            self.words.append(nd.array(word, ctx = self.ctx))
+            for i in range(len(word)):
+                word[i] = (word[i]+1)%2
+                self.words.append(nd.array(word,ctx = self.ctx))
+                word[i] = (word[i]+1)%2
         
         self.t = 1
         self.vs = []
@@ -163,27 +171,49 @@ class NeuralNetwork:
                 zHat = nd.round(zHat)
                 efficiency += nd.sum(nd.equal(zHat,self.z)).asscalar()
 
-                
+               
             Pc = efficiency/(self.sizeG*self.nbIter*self.code.k)
             Pe = 1 - Pc
             normCumuLoss = cumuLoss/(self.sizeG*self.nbIter*self.code.k)
             print("Epochs %d: Pe = %lf , loss = %lf" % (i,Pe,normCumuLoss))
-     
+    
+    def train3(self,epochs):
+        batchSize = len(self.words)
+        z = []
+        for elt in self.z.asnumpy():
+            z.extend([list(elt)]*(self.code.n+1))
+        z = nd.array(z,ctx=self.ctx)
+        x = []
+        for elt in self.words:
+            x.append(list(elt.asnumpy()))
+        x = nd.array(x,ctx = self.ctx)
+        
+        for i in range(epochs):
+            efficiency = 0
+            cumuLoss = 0
+            for j in range(self.nbIter):
+                with autograd.record():
+                    zHat = self.net(x)
+                    loss = self.SE(zHat,z)
+                loss.backward()
+                
+                self.adam(self.params,self.vs,self.sqrs, self.lr, batchSize, self.t)
+                self.t+=1
+        
+                cumuLoss += loss.asscalar()
+                zHat = nd.round(zHat)
+                efficiency += nd.sum(nd.equal(zHat,z)).asscalar()
+ 
+            Pc = efficiency/(batchSize*self.nbIter*self.code.k)
+            Pe = 1 - Pc
+            normCumuLoss = cumuLoss/(batchSize*self.nbIter*self.code.k)
+            print("Epochs %d: Pe = %lf , loss = %lf" % (i,Pe,normCumuLoss))
 
     def computePerformances(self):
-        words = []
-        
-        for word in self.x.asnumpy():
-            words.append(nd.array(word, ctx = self.ctx))
-            for i in range(len(word)):
-                word[i] = (word[i]+1)%2
-                words.append(nd.array(word,ctx = self.ctx))
-                word[i] = (word[i]+1)%2
-        
         wrong = []
         cpt = 0
         for i in range(len(self.z)):
-            for word in words[(self.code.n+1)*i:(self.code.n+1)*(i+1)]:
+            for word in self.words[(self.code.n+1)*i:(self.code.n+1)*(i+1)]:
                 zhat = self.net(word)
                 for diff in nd.round(zhat+self.z[i]):
                     if diff.asscalar()%2 != 0:
@@ -191,7 +221,7 @@ class NeuralNetwork:
                         cpt+=1
                         break
         
-        return (cpt,len(words),wrong)
+        return (cpt,len(self.words),wrong)
                 
     
     ##overwrite the file ./file
