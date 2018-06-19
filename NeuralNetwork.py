@@ -168,7 +168,31 @@ class NeuralNetwork:
             Pe = 1 - Pc
             normCumuLoss = cumuLoss/(self.sizeG*self.nbIter*self.code.k)
             print("Epochs %d: Pe = %lf , loss = %lf" % (i,Pe,normCumuLoss))
+     
+
+    def computePerformances(self):
+        words = []
         
+        for word in self.x.asnumpy():
+            words.append(nd.array(word, ctx = self.ctx))
+            for i in range(len(word)):
+                word[i] = (word[i]+1)%2
+                words.append(nd.array(word,ctx = self.ctx))
+                word[i] = (word[i]+1)%2
+        
+        wrong = []
+        cpt = 0
+        for i in range(len(self.z)):
+            for word in words[(self.code.n+1)*i:(self.code.n+1)*(i+1)]:
+                zhat = self.net(word)
+                for diff in nd.round(zhat+self.z[i]):
+                    if diff.asscalar()%2 != 0:
+                        wrong.append((self.z[i],word))
+                        cpt+=1
+                        break
+        
+        return (cpt,len(words),wrong)
+                
     
     ##overwrite the file ./file
     def save(self):
@@ -199,6 +223,7 @@ class NeuralNetwork:
                 s+="\n"
         return s
 
+    
     def open(cls,file):
         s = ""
         with open(file,"r") as f:
@@ -237,6 +262,7 @@ class NeuralNetwork:
                     ligne[i] = float(ligne_fichier[i])
         
         return net
+    stringToNet = staticmethod(stringToNet)
                 
 if __name__ == "__main__":
     G= nd.array([[1, 0, 0, 0,1,0,1],
