@@ -43,7 +43,7 @@ class Code:
             if d<self.dmin:
                 self.dmin = d
         
-        self.t = floor((self.dmin-1)/2)
+        self.t = int(floor((self.dmin-1)/2))
         
         if self.n>self.nmax:
             return None
