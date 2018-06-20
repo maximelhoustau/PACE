@@ -314,14 +314,14 @@ class NeuralNetwork:
         return s
 
     
-    def open(cls,file):
+    def open(cls,file, ctx = mx.cpu(0)):
         s = ""
         with open(file,"r") as f:
             s = f.read()
-        return cls.stringToNet(s)
+        return cls.stringToNet(s, ctx = ctx)
     open = classmethod(open)
     
-    def stringToNet(s):
+    def stringToNet(s, ctx = mx.cpu(0)):
         tab = s.split("\n")
         tab2 = []
         for chain in tab:
@@ -342,8 +342,8 @@ class NeuralNetwork:
             for j in range(n):
                 G[i,j] = float(ligne[j])
         
-        code = Code(k,n,G)
-        net = NeuralNetwork(code,insideLayersNumber,sizes[1:-1])
+        code = Code(G, ctx)
+        net = NeuralNetwork(code,insideLayersNumber,sizes[1:-1], ctx)
         
         for param in net.params:
             for ligne in param:
