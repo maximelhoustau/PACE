@@ -101,7 +101,7 @@ class NeuralNetwork:
         return nd.sum((yhat - y) ** 2)
     SE = staticmethod(SE)
     
-    ##pourrait être une methode d'objet
+    ##pourrait etre une methode d'objet
     def adam(params, vs, sqrs, lr, batch_size, t):
         beta1 = 0.9
         beta2 = 0.999
@@ -354,10 +354,10 @@ class NeuralNetwork:
         return net
     stringToNet = staticmethod(stringToNet)
                 
-if __name__ == "__main__":
-    G= nd.array([[1, 0, 0, 0,1,0,1],
+#if __name__ == "__main__":
+G= nd.array([[1, 0, 0, 0,1,0,1],
                 [0, 1, 0, 0,1,1,0],
                 [0, 0, 1, 0,1,1,1],
                 [0, 0, 0, 1,0,1,1]],ctx=mx.cpu(0))
-    code = Code(G)
-    net = NeuralNetwork(code,3,[7,7,7])
+code = Code(G)
+net = NeuralNetwork(code,3,[7,7,7])
