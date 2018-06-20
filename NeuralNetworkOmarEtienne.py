@@ -34,7 +34,7 @@ class NeuralNetwork:
     ###########Training characteristics and methods####################
     ctx = mx.cpu(0)
     nbIter = 50
-    batchSize = 100
+    batchSize = 300
     
     def SE(yhat,y):
         return nd.sum((yhat - y) ** 2)
