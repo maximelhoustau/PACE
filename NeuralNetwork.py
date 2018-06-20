@@ -95,7 +95,7 @@ class NeuralNetwork:
     
     ###########Training characteristics and methods####################
     nbIter = 50
-    batchSize = 100
+    batchSize = 500
     
     def SE(yhat,y):
         return nd.sum((yhat - y) ** 2)
