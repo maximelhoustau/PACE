@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 import mxnet as mx
 from mxnet import nd, autograd
 import random
@@ -5,6 +7,8 @@ from math import floor
 from itertools import permutations
 
 
+def ampliOP(x):
+    return nd.relu(x)-nd.relu(x-1)
 
 
 class Code:
@@ -125,12 +129,17 @@ class NeuralNetwork:
     
     
         
-    def __init__(self, code, insideLayersNumber, sizes, ctx = None):
+    def __init__(self, code, insideLayersNumber, sizes, ctx = None, fct = None):
         self.ctx = code.ctx
         if ctx:
             self.ctx = ctx
             if code.ctx != ctx:
                 code = Code(code.G, ctx = ctx)
+                
+                
+        self.fct = fct
+        if self.fct is None:
+            self.fct = ampliOP
         
         self.code = code
         self.layersNumber = insideLayersNumber
@@ -165,7 +174,7 @@ class NeuralNetwork:
     def net(self,input):
         L = input
         for i in range(self.layersNumber+1):
-            L = nd.sigmoid(nd.dot(L,self.params[2*i])+self.params[2*i+1])
+            L = self.fct(nd.dot(L,self.params[2*i])+self.params[2*i+1])
         return L
         
     
