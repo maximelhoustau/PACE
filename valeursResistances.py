@@ -38,23 +38,29 @@ L10 = []
 L = []
 
 for i in L1:
-    L10.append([i,1])
-    L.append(i)
-
-L20 = []
-
-for i in L2:
-    L20.append([i[0],2])
-    L.append(i[0])
+    L10.append([i,"valeur initaile"])
     
-L30 = []
-
-for i in L3:
-    L30.append([i[0],3])
-    L.append(i[0])
-    
-Lf = L10 + L20 + L30
-
-Lf = sorted(Lf)
+L = L10 + L2 + L3
 
 L = sorted(L)
+N = len(L)
+
+
+def rechercher(r):
+    a = 0
+    b = N - 1
+    while (b - a > 1):
+        c = (a+b)//2
+        if (L[c][0] < r):
+            a = c
+        elif (L[c][0] >r):
+            b = c
+        else:
+            a = c
+            b = c
+    return L[a]
+
+Req = 270
+
+def trouverPoid(w):
+    return rechercher(Req/w)
