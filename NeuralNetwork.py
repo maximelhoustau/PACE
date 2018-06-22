@@ -8,9 +8,17 @@ from itertools import permutations
 
 
 def ampliOP(x):
+    #return 0.01*(nd.relu(0.1*(x+10))-nd.relu(0.1*(x+0.5))) + 0.98*(nd.relu(x+0.5)-nd.relu(x-0.5)) + 0.01*(nd.relu(0.1*(x-1))-nd.relu(0.1*(x-11)))
     return nd.relu(x)-nd.relu(x-1)
+    
+def ampliOPSmooth(x):
+    b1 = x<-0.4
+    b2 = x>0.4
+    return b1*0.1*(nd.exp(x+0.4)) + (1-b1)*(1-b2)*(x+0.5) + b2*(0.9+0.1*(1-nd.exp(-(x-0.4))))
 
-
+def sigmoid(x):
+    return nd.sigmoid(4*x)
+    
 class Code:
     """Represent a linear code
     if k is small, it computes all the code : G : E -> F"""
@@ -148,8 +156,8 @@ class NeuralNetwork:
         self.params = list()
         
         for i in range(self.layersNumber+1):
-            self.params.append(nd.random_normal(shape=(self.sizes[i],self.sizes[i+1]),ctx=self.ctx))
-            self.params.append(nd.random.normal(shape = (self.sizes[i+1],),ctx=self.ctx))
+            self.params.append(nd.random_normal(loc = 0,scale = 0.02,shape=(self.sizes[i],self.sizes[i+1]),ctx=self.ctx))
+            self.params.append(nd.random.normal(loc = 0,scale = 0.02, shape = (self.sizes[i+1],),ctx=self.ctx))
         
         
         self.t = 1
@@ -161,7 +169,7 @@ class NeuralNetwork:
             self.vs.append(param.zeros_like())
             self.sqrs.append(param.zeros_like())
         
-        self.lr = 0.01
+        self.lr = 0.001
     
     
     def size(self):
