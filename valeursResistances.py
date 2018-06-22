@@ -38,7 +38,7 @@ L10 = []
 L = []
 
 for i in L1:
-    L10.append([i,"valeur initaile"])
+    L10.append([i,"valeur initiale"])
     
 L = L10 + L2 + L3
 
@@ -50,37 +50,47 @@ def rechercher1(r):
     b = n - 1
     while (b - a > 1):
         c = (a+b)//2
-        if (L1[c] < r):
+        if (L1[c] < abs(r)):
             a = c
-        elif (L1[c] >r):
+        elif (L1[c] > abs(r)):
             b = c
         else:
             a = c
             b = c
-    return L1[a]
+    if (r > 0):
+        return L1[a]
+    return -L1[a]
+        
 
 def trouverPoid1(w, Rf):
     l = rechercher1(Rf/w)
     return l, (Rf/l)
+
 
 def rechercher3(r):
     a = 0
     b = N - 1
     while (b - a > 1):
         c = (a+b)//2
-        if (L[c][0] < r):
+        if (L[c][0] < abs(r)):
             a = c
-        elif (L[c][0] >r):
+        elif (L[c][0] > abs(r)):
             b = c
         else:
             a = c
             b = c
-    return L[a]
+    if (r > 0):
+        return L[a]
+    else:
+        l = list(L[a])
+        l[0] = -l[0]
+        return l
 
 
 def trouverPoid3(w, Rf):
     l = rechercher3(Rf/w)
     return l, (Rf/l[0])
+
 
 n2 = len(L2)
 
@@ -89,50 +99,34 @@ def rechercher2(r):
     b = n2 - 1
     while (b - a > 1):
         c = (a+b)//2
-        if (L2[c][0] < r):
+        if (L2[c][0] < abs(r)):
             a = c
-        elif (L2[c][0] >r):
+        elif (L2[c][0] > abs(r)):
             b = c
         else:
             a = c
             b = c
-    return L2[a]
+    if (r > 0):
+        return L2[a]
+    else:
+        l = list(L2[a])
+        l[0] = -l[0]
+        return l
 
 
 def trouverPoid2(w, Rf):
     l = rechercher2(Rf/w)
     return l, (Rf/l[0])
 
-def trouverRf2(liste):
-    R = 0
-    d = 1000
-    for r in L1:
-        d1 = 0
-        for w in liste:
-            d1 += (w-trouverPoid2(w,r)[1])**2
-        if (d1 < d):
-            d = d1
-            R = r
-    return R, d
-
-def trouverRf3(liste):
-    R = 0
-    d = 1000
-    for r in L1:
-        d1 = 0
-        for w in liste:
-            d1 += (w-trouverPoid3(w,r)[1])**2
-        if (d1 < d):
-            d = d1
-            R = r
-    return R, d
 
 dmax = 0.05
+
 
 def trouverRes(liste,Rf):
     Liste = []
     m = 0
     dt = 0
+    cond = 1
     for w in liste:
         v = trouverPoid1(w, Rf)
         d = abs(w-v[1])
@@ -150,21 +144,40 @@ def trouverRes(liste,Rf):
             else:
                 v = trouverPoid3(w, Rf)
                 Liste.append(v)
+                d = abs(w-v[1])
                 m += 3
-                dt += abs(w-v[1])
-    return Liste, m, dt
+                dt += abs(d)
+                if (d > dmax):
+                    cond = 0
+    return Liste, m, dt, cond
     
 
-def toutTrouver(liste,dtmax):
-    Rf = 0
+
+def trouverRg(Rf, liste):
+    P = 0
+    M = 1/Rf
+    for i in liste:
+        if (i[0] > 0):
+            P += 1/i[0]
+        else:
+            M += -1/i[0]
+    return 1/(M - P)
+        
+    
+
+def toutTrouver(listePoidsNeurone):
+    Rf = 100
     m = 100
+    dt = 1000
     L = []
     for R in L1:
-        res = trouverRes(liste,R)
-        if ((res[2]<dtmax) and (res[1]<m)):
+        res = trouverRes(listePoidsNeurone,R)
+        if (((res[1]<m) or ((res[1] == m) and (res[2] < dt))) and (res[3] == 1)):
             m = res[1]
+            dt = res[2]
             Rf = R
             L = res
-    return Rf, m, L[0]
-        
-        
+    l = []
+    for i in L[0]:
+        l.append(i[0])
+    return Rf, trouverRg(Rf,l), m, L[0]
