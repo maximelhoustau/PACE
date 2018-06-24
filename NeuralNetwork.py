@@ -172,6 +172,7 @@ class NeuralNetwork:
             div = lr * v_bias_corr / (nd.sqrt(sqr_bias_corr) + eps_stable)
             param[:] = param - div
             param[:] = nd.where(param > maximum, maximum, param)
+            param[:] = nd.where(param < -maximum, -maximum, param)
             
             
     
