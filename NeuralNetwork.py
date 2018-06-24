@@ -9,7 +9,7 @@ from itertools import permutations
 
 def ampliOP(x):
     #return 0.01*(nd.relu(0.1*(x+10))-nd.relu(0.1*(x+0.5))) + 0.98*(nd.relu(x+0.5)-nd.relu(x-0.5)) + 0.01*(nd.relu(0.1*(x-1))-nd.relu(0.1*(x-11)))
-    return nd.relu(x)-nd.relu(x-1)
+    return nd.relu(x+0.5)-nd.relu(x-0.5)
     
 def ampliOPSmooth(x):
     b1 = x<-0.4
@@ -18,6 +18,47 @@ def ampliOPSmooth(x):
 
 def sigmoid(x):
     return nd.sigmoid(4*x)
+
+def echelon(x):
+    return x>0
+    
+
+
+def netS(net, input):
+    L1 = net.fct(nd.dot(input,net.params[0])+net.params[1])
+    L2 = net.fct(nd.dot(L1,net.params[2])+net.params[3])
+    L3 = net.fct(nd.dot(L2,net.params[4])+net.params[5])
+    L4 = net.fct(nd.dot(L3,net.params[6])+net.params[7])
+    L5 = net.fct(nd.dot(L4,net.params[8][:,:4])+net.params[9][:4])
+    L6 = net.fct(nd.dot(L5,net.params[10][:4,:]) + nd.dot(input[:,:4],net.params[10][4:,:]) + net.params[11])
+    return net.fct(nd.dot(L6,net.params[12])+net.params[13])
+
+def performancesS(net):
+    wrong = []
+    cpt = 0
+    x = net.code.reachableWords
+    zHat = nd.round(net.net(x))
+    for i in range(len(net.code.E)):
+        for j in range((net.code.n+1)*i,(net.code.n+1)*(i+1)):
+            if (nd.sum(nd.equal(net.code.E[i],zHat[j])) != net.code.k):
+                cpt+=1
+                wrong.append((net.code.E[i],net.code.reachableWords[j]))
+    return (cpt,len(net.code.reachableWords),wrong)
+
+def syndromeMode():
+    NeuralNetwork.net = netS
+    NeuralNetwork.fct = echelon
+    NeuralNetwork.computePerformances = performancesS
+    net = NeuralNetwork.open("syndrome.txt")
+    for param in net.params:
+        param.attach_grad(grad_req = 'null')
+        for ligne in param:
+            for elt in ligne:
+                if elt != 0:
+                    elt.attach_grad()
+    return net
+    
+ 
     
 class Code:
     """Represent a linear code
@@ -114,12 +155,12 @@ class NeuralNetwork:
     SE = staticmethod(SE)
     
     ##pourrait etre une methode d'objet
-    def adam(params, vs, sqrs, lr, batch_size, t):
+    def adam(params, vs, sqrs, maximums, lr, batch_size, t):
         beta1 = 0.9
         beta2 = 0.999
         eps_stable = 1e-8
 
-        for param, v, sqr in zip(params, vs, sqrs):
+        for param, v, sqr, maximum in zip(params, vs, sqrs, maximums):
             g = param.grad / batch_size
 
             v[:] = beta1 * v + (1. - beta1) * g
@@ -130,6 +171,9 @@ class NeuralNetwork:
 
             div = lr * v_bias_corr / (nd.sqrt(sqr_bias_corr) + eps_stable)
             param[:] = param - div
+            param[:] = nd.where(param > maximum, maximum, param)
+            
+            
     
     adam = staticmethod(adam)
     ###############################################
@@ -137,7 +181,7 @@ class NeuralNetwork:
     
     
         
-    def __init__(self, code, insideLayersNumber, sizes, ctx = None, fct = None):
+    def __init__(self, code, insideLayersNumber, sizes, ctx = None, fct = ampliOP, maximum = 1):
         self.ctx = code.ctx
         if ctx:
             self.ctx = ctx
@@ -146,18 +190,19 @@ class NeuralNetwork:
                 
                 
         self.fct = fct
-        if self.fct is None:
-            self.fct = ampliOP
         
         self.code = code
         self.layersNumber = insideLayersNumber
         self.sizes = [code.n] + sizes + [code.k]
         
         self.params = list()
+        self.maximums = []
         
         for i in range(self.layersNumber+1):
-            self.params.append(nd.random_normal(loc = 0,scale = 0.02,shape=(self.sizes[i],self.sizes[i+1]),ctx=self.ctx))
-            self.params.append(nd.random.normal(loc = 0,scale = 0.02, shape = (self.sizes[i+1],),ctx=self.ctx))
+            self.params.append(nd.random_normal(loc = 0,scale = 0.05,shape=(self.sizes[i],self.sizes[i+1]),ctx=self.ctx))
+            self.params.append(nd.random.normal(loc = 0,scale = 0.05, shape = (self.sizes[i+1],),ctx=self.ctx))
+            self.maximums.append(nd.array([[maximum for l in range(self.sizes[i+1])] for k in range(self.sizes[i])]))
+            self.maximums.append(nd.array([maximum for l in range(self.sizes[i+1])]))
         
         
         self.t = 1
@@ -208,7 +253,7 @@ class NeuralNetwork:
                     loss = self.SE(zHat,z)
                 loss.backward()
 
-                self.adam(self.params,self.vs,self.sqrs, self.lr, self.batchSize, self.t)
+                self.adam(self.params,self.vs,self.sqrs, self.maximums, self.lr, self.batchSize, self.t)
                 self.t+=1
         
                 cumuLoss += loss.asscalar()
@@ -242,7 +287,7 @@ class NeuralNetwork:
                     loss = self.SE(zHat,z)
                 loss.backward()
 
-                self.adam(self.params,self.vs,self.sqrs, self.lr, batchSize, self.t)
+                self.adam(self.params,self.vs,self.sqrs, self.maximums, self.lr, batchSize, self.t)
                 self.t+=1
         
                 cumuLoss += loss.asscalar()
@@ -272,7 +317,7 @@ class NeuralNetwork:
                     loss = self.SE(zHat,z)
                 loss.backward()
                 
-                self.adam(self.params,self.vs,self.sqrs, self.lr, batchSize, self.t)
+                self.adam(self.params,self.vs,self.sqrs, self.maximums, self.lr, batchSize, self.t)
                 self.t+=1
         
                 cumuLoss += loss.asscalar()
@@ -331,12 +376,12 @@ class NeuralNetwork:
         return s
 
     
-    def open(cls,file, ctx = mx.cpu(0)):
+    def open(file, ctx = mx.cpu(0)):
         s = ""
         with open(file,"r") as f:
             s = f.read()
-        return cls.stringToNet(s, ctx = ctx)
-    open = classmethod(open)
+        return NeuralNetwork.stringToNet(s, ctx = ctx)
+    open = staticmethod(open)
     
     def stringToNet(s, ctx = mx.cpu(0)):
         tab = s.split("\n")
@@ -399,4 +444,4 @@ G3 = nd.array([[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0],
 
              
 code = Code(G)
-net = NeuralNetwork(code,3,[7,7,7])
+net = NeuralNetwork(code,3,[8,8,8])
