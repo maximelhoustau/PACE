@@ -180,4 +180,5 @@ def toutTrouver(listePoidsNeurone):
     l = []
     for i in L[0]:
         l.append(i[0])
-    return Rf, trouverRg(Rf,l), m, L[0]
+    Rg = trouverRg(Rf,l)
+    return Rf, (Rg, rechercher3(Rg)), m, L[0]
