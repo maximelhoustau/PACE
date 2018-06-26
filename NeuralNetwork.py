@@ -1,25 +1,90 @@
+# -*- coding: utf-8 -*-
+
 import mxnet as mx
 from mxnet import nd, autograd
-import random     
 
+import random
+from math import floor
+from itertools import permutations
 
-             
-             
-class Code:
-    """Represent a linear code"""
+from activation import *
     
-    def __init__(self,k,n,G):
-        #A changer (k = nb de ligne de G n = nb de colonnes)
+ 
+    
+class Code:
+    """Represent a linear code
+    if k is small, it computes all the code : G : E -> F"""
+    kmax = 10
+    nmax = 15
+    
+    def __init__(self,G, compute = True, ctx = mx.cpu(0)):
         #Peut etre rajouter H pour le calcul efficace de dmin
-        self.k = k
-        self.n = n
-        self.G = G
+        self.k = len(G)
+        self.n = len(G[0])
+        self.G = nd.array(G, ctx = ctx)
+        self.ctx = ctx
+
         
-        self.dmin = self.computeDmin()
+        if self.k<=self.kmax and compute:
+            self.compute()
         
-    def computeDmin(self):
-        #flemme
-        return 3
+    
+    
+    def compute(self):
+        self.size = 2**self.k
+        self.E = [[0 for j in range(self.k)] for i in range(self.size)]
+        for i in range(self.size):
+            s = ("{:0"+str(self.k)+"b}").format(i)
+            for j in range(len(s)):
+                self.E[i][j] = s[j]
+        self.E = nd.array(self.E, ctx = self.ctx)
+        self.F = nd.dot(self.E,self.G)%2
+        
+        self.dmin = nd.sum(nd.equal(self.F[0],self.F[1])).asscalar()
+        
+        for i in range(2,len(self.F)):
+            d = nd.sum(self.F[i]).asscalar()
+            if d<self.dmin:
+                self.dmin = d
+        
+        self.t = int(floor((self.dmin-1)/2))
+        
+        if self.n>self.nmax:
+            return None
+        
+        ##Words with less than t mistakes
+        self.corrigibleWords = []
+        self.corrigibleE = []
+        
+        for nb in range(self.t+1):
+            t = [1]*nb+[0]*(self.n-nb)
+            combinations = []
+            for perm in permutations(t):
+                if not perm in combinations:
+                    combinations.append(perm)
+            for i in range(len(self.F)):
+                for error in combinations:
+                    corrigibleWord = []
+                    for j in range(self.n):
+                        corrigibleWord.append((self.F[i,j].asscalar()+ error[j])%2)
+                    self.corrigibleWords.append(corrigibleWord)
+                    self.corrigibleE.append(list(self.E[i].asnumpy()))
+        self.corrigibleWords = nd.array(self.corrigibleWords,ctx = self.ctx)
+        self.corrigibleE = nd.array(self.corrigibleE, ctx = self.ctx)
+        
+        ##Words with only one mistake
+        self.reachableWords = []
+        
+        for word in self.F.asnumpy():
+            self.reachableWords.append(list(word))
+            for i in range(len(word)):
+                word[i] = (word[i]+1)%2
+                self.reachableWords.append(list(word))
+                word[i] = (word[i]+1)%2
+        self.reachableWords = nd.array(self.reachableWords, ctx = self.ctx)
+        
+        
+        
         
         
     
@@ -33,21 +98,22 @@ class NeuralNetwork:
     Can also be stored in file or create from a file"""
     
     ###########Training characteristics and methods####################
-    ctx = mx.cpu(0)
     nbIter = 50
-    batchSize = 100
+    batchSize = 500
     
     def SE(yhat,y):
         return nd.sum((yhat - y) ** 2)
     SE = staticmethod(SE)
     
-    ##pourrait être une methode d'objet
-    def adam(params, vs, sqrs, lr, batch_size, t):
+    ##pourrait etre une methode d'objet
+    def adam(params, vs, sqrs, maximums, lr, batch_size, t):
         beta1 = 0.9
         beta2 = 0.999
         eps_stable = 1e-8
 
-        for param, v, sqr in zip(params, vs, sqrs):
+        for param, v, sqr, maximum in zip(params, vs, sqrs, maximums):
+            if param.grad is None:
+                continue
             g = param.grad / batch_size
 
             v[:] = beta1 * v + (1. - beta1) * g
@@ -58,6 +124,10 @@ class NeuralNetwork:
 
             div = lr * v_bias_corr / (nd.sqrt(sqr_bias_corr) + eps_stable)
             param[:] = param - div
+            param[:] = nd.where(param > maximum, maximum, param)
+            param[:] = nd.where(param < -maximum, -maximum, param)
+            
+            
     
     adam = staticmethod(adam)
     ###############################################
@@ -65,34 +135,29 @@ class NeuralNetwork:
     
     
         
-    def __init__(self, code, insideLayersNumber, sizes):
+    def __init__(self, code, insideLayersNumber, sizes, ctx = None, fct = ampliOP, maximum = 1):
+        self.ctx = code.ctx
+        if ctx:
+            self.ctx = ctx
+            if code.ctx != ctx:
+                code = Code(code.G, ctx = ctx)
+                
+                
+        self.fct = fct
+        
         self.code = code
         self.layersNumber = insideLayersNumber
         self.sizes = [code.n] + sizes + [code.k]
         
         self.params = list()
+        self.maximums = []
         
         for i in range(self.layersNumber+1):
-            self.params.append(nd.random_normal(shape=(self.sizes[i],self.sizes[i+1]),ctx=self.ctx))
-            self.params.append(nd.random.normal(shape = (self.sizes[i+1],),ctx=self.ctx))
+            self.params.append(nd.random_normal(loc = 0,scale = 0.05,shape=(self.sizes[i],self.sizes[i+1]),ctx=self.ctx))
+            self.params.append(nd.random.normal(loc = 0,scale = 0.05, shape = (self.sizes[i+1],),ctx=self.ctx))
+            self.maximums.append(nd.array([[maximum for l in range(self.sizes[i+1])] for k in range(self.sizes[i])]))
+            self.maximums.append(nd.array([maximum for l in range(self.sizes[i+1])]))
         
-        self.sizeG = 2**code.k
-        self.z = [[0 for j in range(code.k)] for i in range(self.sizeG)]
-        for i in range(self.sizeG):
-            s = ("{:0"+str(code.k)+"b}").format(i)
-            for j in range(len(s)):
-                self.z[i][j] = s[j]
-        self.z = nd.array(self.z,ctx = self.ctx)
-        self.x = nd.dot(self.z,self.code.G)%2
-        
-        self.words = []
-        
-        for word in self.x.asnumpy():
-            self.words.append(nd.array(word, ctx = self.ctx))
-            for i in range(len(word)):
-                word[i] = (word[i]+1)%2
-                self.words.append(nd.array(word,ctx = self.ctx))
-                word[i] = (word[i]+1)%2
         
         self.t = 1
         self.vs = []
@@ -103,15 +168,20 @@ class NeuralNetwork:
             self.vs.append(param.zeros_like())
             self.sqrs.append(param.zeros_like())
         
-        self.lr = 0.01
+        self.lr = 0.001
     
     
+    def size(self):
+        S = 0
+        for param in self.params:
+            S+= param.size
+        return S
     
     ##Peut etre rajouter une autre methode qui fait le round en sortie
     def net(self,input):
         L = input
         for i in range(self.layersNumber+1):
-            L = nd.sigmoid(nd.dot(L,self.params[2*i])+self.params[2*i+1])
+            L = self.fct(nd.dot(L,self.params[2*i])+self.params[2*i+1])
         return L
         
     
@@ -126,7 +196,10 @@ class NeuralNetwork:
 
                 noiseBSC = nd.random.uniform(0.01,0.99,(self.batchSize,self.code.n),ctx=self.ctx)
                 noiseBSC = nd.floor(noiseBSC/nd.max(noiseBSC,axis=(1,)).reshape((self.batchSize,1)))
-
+                actif = nd.array([[random.uniform(0,1)>0.125]*self.code.n for k in range(self.batchSize)], ctx = self.ctx)
+                noiseBSC = noiseBSC * actif
+                
+                
                 y = (x + noiseBSC)%2
 
                 with autograd.record():
@@ -134,7 +207,7 @@ class NeuralNetwork:
                     loss = self.SE(zHat,z)
                 loss.backward()
 
-                self.adam(self.params,self.vs,self.sqrs, self.lr, self.batchSize, self.t)
+                self.adam(self.params,self.vs,self.sqrs, self.maximums, self.lr, self.batchSize, self.t)
                 self.t+=1
         
                 cumuLoss += loss.asscalar()
@@ -148,45 +221,46 @@ class NeuralNetwork:
             print("Epochs %d: Pe = %lf , loss = %lf" % (i,Pe,normCumuLoss))
     
     def train2(self,epochs):
+        batchSize = self.code.size
+        x = self.code.F
+        z = self.code.E
+        
         for i in range(epochs):
             efficiency = 0
             cumuLoss = 0
             for j in range(self.nbIter):
-                noiseBSC = nd.random.uniform(0.01,0.99,(self.sizeG,self.code.n),ctx=self.ctx)
-                noiseBSC = nd.floor(noiseBSC/nd.max(noiseBSC,axis=(1,)).reshape((self.sizeG,1)))
-                actif = nd.array([[random.uniform(0,1)>0.125]*self.code.n for k in range(self.sizeG)], ctx = self.ctx)
+                noiseBSC = nd.random.uniform(0.01,0.99,(batchSize,self.code.n),ctx=self.ctx)
+                noiseBSC = nd.floor(noiseBSC/nd.max(noiseBSC,axis=(1,)).reshape((batchSize,1)))
+                actif = nd.array([[random.uniform(0,1)>0.125]*self.code.n for k in range(batchSize)], ctx = self.ctx)
                 noiseBSC = noiseBSC * actif
                 
-                y = (self.x + noiseBSC)%2
+                y = (x + noiseBSC)%2
 
                 with autograd.record():
                     zHat = self.net(y)
-                    loss = self.SE(zHat,self.z)
+                    loss = self.SE(zHat,z)
                 loss.backward()
 
-                self.adam(self.params,self.vs,self.sqrs, self.lr, self.sizeG, self.t)
+                self.adam(self.params,self.vs,self.sqrs, self.maximums, self.lr, batchSize, self.t)
                 self.t+=1
         
                 cumuLoss += loss.asscalar()
                 zHat = nd.round(zHat)
-                efficiency += nd.sum(nd.equal(zHat,self.z)).asscalar()
+                efficiency += nd.sum(nd.equal(zHat,z)).asscalar()
 
                
-            Pc = efficiency/(self.sizeG*self.nbIter*self.code.k)
+            Pc = efficiency/(batchSize*self.nbIter*self.code.k)
             Pe = 1 - Pc
-            normCumuLoss = cumuLoss/(self.sizeG*self.nbIter*self.code.k)
+            normCumuLoss = cumuLoss/(batchSize*self.nbIter*self.code.k)
             print("Epochs %d: Pe = %lf , loss = %lf" % (i,Pe,normCumuLoss))
     
     def train3(self,epochs):
-        batchSize = len(self.words)
+        batchSize = len(self.code.reachableWords)
         z = []
-        for elt in self.z.asnumpy():
+        for elt in self.code.E.asnumpy():
             z.extend([list(elt)]*(self.code.n+1))
         z = nd.array(z,ctx=self.ctx)
-        x = []
-        for elt in self.words:
-            x.append(list(elt.asnumpy()))
-        x = nd.array(x,ctx = self.ctx)
+        x = self.code.reachableWords
         
         for i in range(epochs):
             efficiency = 0
@@ -197,7 +271,7 @@ class NeuralNetwork:
                     loss = self.SE(zHat,z)
                 loss.backward()
                 
-                self.adam(self.params,self.vs,self.sqrs, self.lr, batchSize, self.t)
+                self.adam(self.params,self.vs,self.sqrs, self.maximums, self.lr, batchSize, self.t)
                 self.t+=1
         
                 cumuLoss += loss.asscalar()
@@ -209,19 +283,21 @@ class NeuralNetwork:
             normCumuLoss = cumuLoss/(batchSize*self.nbIter*self.code.k)
             print("Epochs %d: Pe = %lf , loss = %lf" % (i,Pe,normCumuLoss))
 
+            
+            
     def computePerformances(self):
         wrong = []
         cpt = 0
-        for i in range(len(self.z)):
-            for word in self.words[(self.code.n+1)*i:(self.code.n+1)*(i+1)]:
+        for i in range(len(self.code.E)):
+            for word in self.code.reachableWords[(self.code.n+1)*i:(self.code.n+1)*(i+1)]:
                 zhat = self.net(word)
-                for diff in nd.round(zhat+self.z[i]):
+                for diff in nd.round(zhat+self.code.E[i]):
                     if diff.asscalar()%2 != 0:
-                        wrong.append((self.z[i],word))
+                        wrong.append((self.code.E[i],word))
                         cpt+=1
                         break
         
-        return (cpt,len(self.words),wrong)
+        return (cpt,len(self.code.reachableWords),wrong)
                 
     
     ##overwrite the file ./file
@@ -254,14 +330,14 @@ class NeuralNetwork:
         return s
 
     
-    def open(cls,file):
+    def open(cls, file, ctx = mx.cpu(0)):
         s = ""
         with open(file,"r") as f:
             s = f.read()
-        return cls.stringToNet(s)
+        return cls.stringToNet(s, ctx = ctx)
     open = classmethod(open)
     
-    def stringToNet(s):
+    def stringToNet(cls, s, ctx = mx.cpu(0)):
         tab = s.split("\n")
         tab2 = []
         for chain in tab:
@@ -282,8 +358,8 @@ class NeuralNetwork:
             for j in range(n):
                 G[i,j] = float(ligne[j])
         
-        code = Code(k,n,G)
-        net = NeuralNetwork(code,insideLayersNumber,sizes[1:-1])
+        code = Code(G, ctx)
+        net = cls(code,insideLayersNumber,sizes[1:-1], ctx)
         
         for param in net.params:
             for ligne in param:
@@ -292,12 +368,74 @@ class NeuralNetwork:
                     ligne[i] = float(ligne_fichier[i])
         
         return net
-    stringToNet = staticmethod(stringToNet)
+    stringToNet = classmethod(stringToNet)
+       
+
+
+
+
+
+class syndromeNN(NeuralNetwork):
+    def __init__(self, code, insideLayersNumber, sizes, ctx = None, fct = echelon, maximum = 3):
+        NeuralNetwork.__init__(self, code, insideLayersNumber, sizes, ctx, fct, maximum)
+   
+    def net(self, input):
+        L1 = self.fct(nd.dot(input,self.params[0])+self.params[1])
+        L2 = self.fct(nd.dot(L1,self.params[2])+self.params[3])
+        L3 = self.fct(nd.dot(L2,self.params[4])+self.params[5])
+        L4 = self.fct(nd.dot(L3,self.params[6])+self.params[7])
+        L5 = self.fct(nd.dot(L4,self.params[8][:,:4])+self.params[9][:4])
+        L6 = self.fct(nd.dot(L5,self.params[10][:4,:]) + nd.dot(input[:,:4],self.params[10][4:,:]) + self.params[11])
+        return self.fct(nd.dot(L6,self.params[12])+self.params[13])
+        
+    def computePerformances(self):
+        wrong = []
+        cpt = 0
+        x = self.code.reachableWords
+        zHat = nd.round(self.net(x))
+        for i in range(len(self.code.E)):
+            for j in range((self.code.n+1)*i,(self.code.n+1)*(i+1)):
+                if (nd.sum(nd.equal(self.code.E[i],zHat[j])) != self.code.k):
+                    cpt+=1
+                    wrong.append((self.code.E[i],self.code.reachableWords[j]))
+        return (cpt,len(self.code.reachableWords),wrong)
+    
+    def SE(self, y, yhat):
+        S = NeuralNetwork.SE(y,yhat)
+        for param in self.params:
+            S = S + nd.sum(nd.abs(param))
+        return S
+        
+        
+        
+        
+        
+#if __name__ == "__main__":
+G= nd.array([[1, 0, 0, 0,1,0,1],
+             [0, 1, 0, 0,1,1,0],
+             [0, 0, 1, 0,1,1,1],
+             [0, 0, 0, 1,0,1,1]],ctx=mx.cpu(0))
                 
-if __name__ == "__main__":
-    G= nd.array([[1, 0, 0, 0,1,0,1],
-                [0, 1, 0, 0,1,1,0],
-                [0, 0, 1, 0,1,1,1],
-                [0, 0, 0, 1,0,1,1]],ctx=mx.cpu(0))
-    code = Code(4,7,G)
-    net = NeuralNetwork(code,2,[7,7])
+G2 = nd.array([[1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1],
+               [0, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 1, 0], 
+               [0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 1],
+               [0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 1, 0, 0, 0],
+               [0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 1, 0, 0],
+               [0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 1, 0],
+               [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 1]], ctx = mx.cpu(0))
+              
+G3 = nd.array([[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0],
+               [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0],
+               [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+               [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1],
+               [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0],
+               [0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1],
+               [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 0],
+               [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1],
+               [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 1, 1, 1],
+               [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1],
+               [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1]], ctx = mx.cpu(0))
+
+             
+code = Code(G)
+net = NeuralNetwork(code,3,[8,8,8], maximum = 1)
