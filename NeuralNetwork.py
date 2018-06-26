@@ -2,61 +2,12 @@
 
 import mxnet as mx
 from mxnet import nd, autograd
+
 import random
 from math import floor
 from itertools import permutations
 
-
-def ampliOP(x):
-    #return 0.01*(nd.relu(0.1*(x+10))-nd.relu(0.1*(x+0.5))) + 0.98*(nd.relu(x+0.5)-nd.relu(x-0.5)) + 0.01*(nd.relu(0.1*(x-1))-nd.relu(0.1*(x-11)))
-    return nd.relu(x+0.5)-nd.relu(x-0.5)
-    
-def ampliOPSmooth(x):
-    b1 = x<-0.4
-    b2 = x>0.4
-    return b1*0.1*(nd.exp(x+0.4)) + (1-b1)*(1-b2)*(x+0.5) + b2*(0.9+0.1*(1-nd.exp(-(x-0.4))))
-
-def sigmoid(x):
-    return nd.sigmoid(4*x)
-
-def echelon(x):
-    return x>0
-    
-
-
-def netS(net, input):
-    L1 = net.fct(nd.dot(input,net.params[0])+net.params[1])
-    L2 = net.fct(nd.dot(L1,net.params[2])+net.params[3])
-    L3 = net.fct(nd.dot(L2,net.params[4])+net.params[5])
-    L4 = net.fct(nd.dot(L3,net.params[6])+net.params[7])
-    L5 = net.fct(nd.dot(L4,net.params[8][:,:4])+net.params[9][:4])
-    L6 = net.fct(nd.dot(L5,net.params[10][:4,:]) + nd.dot(input[:,:4],net.params[10][4:,:]) + net.params[11])
-    return net.fct(nd.dot(L6,net.params[12])+net.params[13])
-
-def performancesS(net):
-    wrong = []
-    cpt = 0
-    x = net.code.reachableWords
-    zHat = nd.round(net.net(x))
-    for i in range(len(net.code.E)):
-        for j in range((net.code.n+1)*i,(net.code.n+1)*(i+1)):
-            if (nd.sum(nd.equal(net.code.E[i],zHat[j])) != net.code.k):
-                cpt+=1
-                wrong.append((net.code.E[i],net.code.reachableWords[j]))
-    return (cpt,len(net.code.reachableWords),wrong)
-
-def syndromeMode():
-    NeuralNetwork.net = netS
-    NeuralNetwork.fct = echelon
-    NeuralNetwork.computePerformances = performancesS
-    net = NeuralNetwork.open("syndrome.txt")
-    for param in net.params:
-        param.attach_grad(grad_req = 'null')
-        for ligne in param:
-            for elt in ligne:
-                if elt != 0:
-                    elt.attach_grad()
-    return net
+from activation import *
     
  
     
@@ -161,6 +112,8 @@ class NeuralNetwork:
         eps_stable = 1e-8
 
         for param, v, sqr, maximum in zip(params, vs, sqrs, maximums):
+            if param.grad is None:
+                continue
             g = param.grad / batch_size
 
             v[:] = beta1 * v + (1. - beta1) * g
@@ -377,14 +330,14 @@ class NeuralNetwork:
         return s
 
     
-    def open(file, ctx = mx.cpu(0)):
+    def open(cls, file, ctx = mx.cpu(0)):
         s = ""
         with open(file,"r") as f:
             s = f.read()
-        return NeuralNetwork.stringToNet(s, ctx = ctx)
-    open = staticmethod(open)
+        return cls.stringToNet(s, ctx = ctx)
+    open = classmethod(open)
     
-    def stringToNet(s, ctx = mx.cpu(0)):
+    def stringToNet(cls, s, ctx = mx.cpu(0)):
         tab = s.split("\n")
         tab2 = []
         for chain in tab:
@@ -406,7 +359,7 @@ class NeuralNetwork:
                 G[i,j] = float(ligne[j])
         
         code = Code(G, ctx)
-        net = NeuralNetwork(code,insideLayersNumber,sizes[1:-1], ctx)
+        net = cls(code,insideLayersNumber,sizes[1:-1], ctx)
         
         for param in net.params:
             for ligne in param:
@@ -415,8 +368,48 @@ class NeuralNetwork:
                     ligne[i] = float(ligne_fichier[i])
         
         return net
-    stringToNet = staticmethod(stringToNet)
-                
+    stringToNet = classmethod(stringToNet)
+       
+
+
+
+
+
+class syndromeNN(NeuralNetwork):
+    def __init__(self, code, insideLayersNumber, sizes, ctx = None, fct = echelon, maximum = 3):
+        NeuralNetwork.__init__(self, code, insideLayersNumber, sizes, ctx, fct, maximum)
+   
+    def net(self, input):
+        L1 = self.fct(nd.dot(input,self.params[0])+self.params[1])
+        L2 = self.fct(nd.dot(L1,self.params[2])+self.params[3])
+        L3 = self.fct(nd.dot(L2,self.params[4])+self.params[5])
+        L4 = self.fct(nd.dot(L3,self.params[6])+self.params[7])
+        L5 = self.fct(nd.dot(L4,self.params[8][:,:4])+self.params[9][:4])
+        L6 = self.fct(nd.dot(L5,self.params[10][:4,:]) + nd.dot(input[:,:4],self.params[10][4:,:]) + self.params[11])
+        return self.fct(nd.dot(L6,self.params[12])+self.params[13])
+        
+    def computePerformances(self):
+        wrong = []
+        cpt = 0
+        x = self.code.reachableWords
+        zHat = nd.round(self.net(x))
+        for i in range(len(self.code.E)):
+            for j in range((self.code.n+1)*i,(self.code.n+1)*(i+1)):
+                if (nd.sum(nd.equal(self.code.E[i],zHat[j])) != self.code.k):
+                    cpt+=1
+                    wrong.append((self.code.E[i],self.code.reachableWords[j]))
+        return (cpt,len(self.code.reachableWords),wrong)
+    
+    def SE(self, y, yhat):
+        S = NeuralNetwork.SE(y,yhat)
+        for param in self.params:
+            S = S + nd.sum(nd.abs(param))
+        return S
+        
+        
+        
+        
+        
 #if __name__ == "__main__":
 G= nd.array([[1, 0, 0, 0,1,0,1],
              [0, 1, 0, 0,1,1,0],
@@ -445,4 +438,4 @@ G3 = nd.array([[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0],
 
              
 code = Code(G)
-net = NeuralNetwork(code,3,[8,8,8])
+net = NeuralNetwork(code,3,[8,8,8], maximum = 1)
