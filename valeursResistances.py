@@ -64,7 +64,7 @@ def rechercher1(r):
 
 def trouverPoid1(w, Rf):
     l = rechercher1(Rf/w)
-    return l, (Rf/l)
+    return [l], (Rf/l)
 
 
 def rechercher3(r):
